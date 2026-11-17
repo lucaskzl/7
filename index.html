@@ -68,10 +68,18 @@
       transform: translateZ(0);
     }
 
-    body.gate-locked,
-    body.modal-locked {
+    body.gate-locked {
       overflow: hidden;
       height: 100dvh;
+    }
+
+    /* Congela a página exatamente no ponto atual ao abrir uma foto */
+    body.modal-locked {
+      position: fixed;
+      left: 0;
+      right: 0;
+      width: 100%;
+      overflow: hidden;
     }
 
     button {
@@ -717,7 +725,7 @@
       color: var(--ochre-earth);
     }
 
-    /* ==================== 7. LIGHTBOX COM X TRANSLÚCIDO SEM CÍRCULO ==================== */
+    /* ==================== 7. LIGHTBOX SOMENTE COM X TRANSLÚCIDO NA FOTO ==================== */
     .lightbox-modal {
       position: fixed;
       inset: 0;
@@ -784,7 +792,7 @@
       background: #090e0c;
     }
 
-    /* X translúcido limpo no canto superior esquerdo dentro da foto (sem círculo ou borda) */
+    /* X translúcido limpo no canto superior esquerdo dentro da foto */
     .lightbox-close-inside {
       position: absolute;
       top: 6px;
@@ -814,7 +822,7 @@
     .lightbox-media-wrap img {
       display: block;
       max-width: 100%;
-      max-height: 54dvh;
+      max-height: 58dvh;
       width: auto;
       height: auto;
       object-fit: contain;
@@ -824,7 +832,7 @@
     .lightbox-placeholder {
       width: min(80vw, 330px);
       aspect-ratio: 4 / 5;
-      max-height: 50dvh;
+      max-height: 54dvh;
       background: #0d1411;
       display: flex;
       flex-direction: column;
@@ -872,32 +880,6 @@
       line-height: 1.48;
       font-style: italic;
       color: var(--parchment);
-    }
-
-    .lightbox-return-btn {
-      margin-top: 18px;
-      min-height: 42px;
-      padding: 10px 22px;
-      background: rgba(18, 28, 23, 0.85);
-      border: 1px solid var(--ochre-line);
-      color: var(--parchment);
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 10px;
-      letter-spacing: 1.8px;
-      text-transform: uppercase;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      cursor: pointer;
-      transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
-    }
-
-    .lightbox-return-btn:hover,
-    .lightbox-return-btn:active {
-      background: var(--ochre-earth);
-      border-color: var(--ochre-earth);
-      color: var(--bg-base);
     }
 
     /* Fallback técnico caso a imagem ainda não tenha sido enviada */
@@ -1062,23 +1044,18 @@
 
   </main>
 
-  <!-- ==================== 4. LIGHTBOX COM X TRANSLÚCIDO SEM CÍRCULO ==================== -->
+  <!-- ==================== 4. LIGHTBOX COM X TRANSLÚCIDO DENTRO DA FOTO ==================== -->
   <div class="lightbox-modal" id="lightbox" onclick="handleBackdropClick(event)" role="dialog" aria-modal="true" aria-hidden="true">
     <div class="lightbox-stage" id="lightbox-stage">
       <div class="lightbox-frame" id="lightbox-frame"></div>
       <div class="lightbox-text-block">
         <span class="lightbox-code" id="lightbox-code"></span>
         <p class="lightbox-caption" id="lightbox-caption"></p>
-        <button class="lightbox-return-btn" type="button" onclick="closeLightbox()">
-          <span aria-hidden="true">←</span>
-          <span>Voltar para a página</span>
-        </button>
       </div>
     </div>
   </div>
 
   <script>
-    // Garante que a página sempre comece no topo absoluto
     if ("scrollRestoration" in history) {
       history.scrollRestoration = "manual";
     }
@@ -1176,13 +1153,14 @@
       }
     }
 
-    // Lightbox fluido (60fps GPU) com botão X translúcido sem círculo dentro da foto
+    // Lightbox fluido mantendo exatamente a posição de rolagem da foto
     const lightboxEl = document.getElementById("lightbox");
     const lightboxStage = document.getElementById("lightbox-stage");
     const lightboxFrame = document.getElementById("lightbox-frame");
     const lightboxCode = document.getElementById("lightbox-code");
     const lightboxCaption = document.getElementById("lightbox-caption");
     let closeTimer = null;
+    let savedScrollY = 0;
 
     const closeInsideButtonHTML = `
       <button class="lightbox-close-inside" type="button" onclick="closeLightbox()" aria-label="Fechar foto">
@@ -1198,6 +1176,9 @@
         clearTimeout(closeTimer);
         closeTimer = null;
       }
+
+      // Salva a posição exata da página antes de travar o fundo
+      savedScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
 
       const imgEl = cardEl.querySelector("img");
       const item = plates[index];
@@ -1224,6 +1205,7 @@
       lightboxCode.textContent = item.code;
       lightboxCaption.textContent = `“${item.caption}”`;
 
+      document.body.style.top = `-${savedScrollY}px`;
       document.body.classList.add("modal-locked");
       lightboxEl.setAttribute("aria-hidden", "false");
       lightboxEl.scrollTop = 0;
@@ -1236,7 +1218,11 @@
     function closeLightbox() {
       lightboxEl.classList.remove("active");
       lightboxEl.setAttribute("aria-hidden", "true");
+
+      // Destrava o fundo e restaura imediatamente a posição exata da foto
       document.body.classList.remove("modal-locked");
+      document.body.style.top = "";
+      window.scrollTo(0, savedScrollY);
 
       closeTimer = setTimeout(() => {
         if (!lightboxEl.classList.contains("active")) {
@@ -1327,7 +1313,6 @@
     });
 
     function enterArchive() {
-      // Destrava a página e força a abertura exatamente no início (topo)
       document.body.classList.remove("gate-locked");
       window.scrollTo(0, 0);
       document.documentElement.scrollTop = 0;
