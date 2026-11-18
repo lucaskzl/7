@@ -904,8 +904,8 @@
 </head>
 <body class="gate-locked">
 
-  <!-- Áudio local no GitHub (musica.mp3 na raiz do repositório) -->
-  <audio id="bg-music" src="musica.mp3" loop preload="auto" playsinline></audio>
+  <!-- Áudio local no GitHub (musica.mp3 na raiz do repositório, iniciando em 8s) -->
+  <audio id="bg-music" src="musica.mp3#t=8" loop preload="auto" playsinline webkit-playsinline></audio>
 
   <!-- ==================== 1. CAPA DE ENTRADA ==================== -->
   <section id="folio-gate">
@@ -928,7 +928,7 @@
       <div class="audio-meta">
         <div class="audio-status-line">
           <span class="audio-status" id="audio-status">Carregando</span>
-          <span class="audio-time" id="audio-time">0:00 / 0:00</span>
+          <span class="audio-time" id="audio-time">0:08 / 0:00</span>
         </div>
         <span class="audio-name">Neil Young — Harvest Moon</span>
       </div>
@@ -1265,8 +1265,8 @@
     updateRealtimeCounter();
     setInterval(updateRealtimeCounter, 1000);
 
-    // ==================== PLAYER DE ÁUDIO ROBUSTO ====================
-    const AUDIO_START_SECONDS = 8; // Inicia exatamente aos 8 segundos da faixa
+    // ==================== PLAYER DE ÁUDIO (MOBILE + DESKTOP INSTANTÂNEO EM 8S) ====================
+    const AUDIO_START_SECONDS = 8;
     const audio = document.getElementById("bg-music");
     const iconPause = document.getElementById("icon-pause");
     const iconPlay = document.getElementById("icon-play");
@@ -1275,8 +1275,17 @@
     const progressFill = document.getElementById("progress-fill");
     const progressHit = document.getElementById("progress-hit");
     let playing = false;
+    let hasJumpedToStart = false;
     let audioTriedExt = 0;
     const audioExtensions = ["musica.MP3", "musica.m4a", "musica.ogg"];
+
+    // Pré-aquece o cache do navegador enquanto a capa inicial está na tela
+    try {
+      audio.load();
+      if (window.fetch) {
+        fetch("musica.mp3", { cache: "force-cache" }).catch(() => {});
+      }
+    } catch (e) {}
 
     function formatSeconds(sec) {
       if (!isFinite(sec) || sec < 0) return "0:00";
@@ -1292,9 +1301,23 @@
       statusLabel.textContent = customStatus || (isPlaying ? "Tocando agora" : "Pausado");
     }
 
+    function applyInitialOffset() {
+      if (hasJumpedToStart) return;
+      if (audio.duration && audio.duration > AUDIO_START_SECONDS) {
+        if (audio.currentTime < AUDIO_START_SECONDS - 0.3) {
+          try {
+            audio.currentTime = AUDIO_START_SECONDS;
+          } catch (e) {}
+        }
+        if (audio.currentTime >= AUDIO_START_SECONDS - 0.3) {
+          hasJumpedToStart = true;
+        }
+      }
+    }
+
     audio.addEventListener("error", () => {
       if (audioTriedExt < audioExtensions.length) {
-        audio.src = audioExtensions[audioTriedExt++];
+        audio.src = `${audioExtensions[audioTriedExt++]}#t=${AUDIO_START_SECONDS}`;
         audio.load();
       } else {
         syncAudioUI(false, "Aguardando musica.mp3");
@@ -1302,13 +1325,26 @@
     });
 
     audio.addEventListener("loadedmetadata", () => {
-      if (audio.duration > AUDIO_START_SECONDS && audio.currentTime < AUDIO_START_SECONDS) {
-        audio.currentTime = AUDIO_START_SECONDS;
+      applyInitialOffset();
+      timeLabel.textContent = `${formatSeconds(audio.currentTime || AUDIO_START_SECONDS)} / ${formatSeconds(audio.duration)}`;
+    });
+
+    audio.addEventListener("canplay", applyInitialOffset);
+    audio.addEventListener("playing", () => {
+      applyInitialOffset();
+      syncAudioUI(true);
+    });
+
+    audio.addEventListener("pause", () => {
+      if (playing) {
+        syncAudioUI(false);
       }
-      timeLabel.textContent = `${formatSeconds(audio.currentTime)} / ${formatSeconds(audio.duration)}`;
     });
 
     audio.addEventListener("timeupdate", () => {
+      if (!hasJumpedToStart && !audio.paused) {
+        applyInitialOffset();
+      }
       if (audio.duration) {
         if (audio.currentTime >= audio.duration - 0.35 && audio.duration > AUDIO_START_SECONDS) {
           audio.currentTime = AUDIO_START_SECONDS;
@@ -1328,17 +1364,17 @@
       document.getElementById("folio-gate").classList.add("dismissed");
       document.getElementById("audio-dock").style.display = "flex";
 
-      if (audio.readyState >= 1 && audio.duration > AUDIO_START_SECONDS && audio.currentTime < AUDIO_START_SECONDS) {
-        audio.currentTime = AUDIO_START_SECONDS;
-      }
+      audio.volume = 0.85;
+      syncAudioUI(true, "Iniciando...");
 
-      audio.volume = 0.8;
+      // Dispara play() de forma 100% síncrona no toque (exigência do Safari iOS e Chrome Android)
       const playPromise = audio.play();
       if (playPromise !== undefined) {
         playPromise
           .then(() => {
-            if (audio.duration > AUDIO_START_SECONDS && audio.currentTime < AUDIO_START_SECONDS) {
-              audio.currentTime = AUDIO_START_SECONDS;
+            applyInitialOffset();
+            if (audio.paused) {
+              audio.play().catch(() => {});
             }
             syncAudioUI(true);
           })
@@ -1353,24 +1389,29 @@
     }
 
     function toggleAudio() {
-      if (playing) {
+      if (!audio.paused) {
         audio.pause();
         syncAudioUI(false);
       } else {
-        audio.play()
-          .then(() => syncAudioUI(true))
-          .catch(() => {
+        const p = audio.play();
+        if (p !== undefined) {
+          p.then(() => {
+            applyInitialOffset();
+            syncAudioUI(true);
+          }).catch(() => {
             if (audio.error) {
               syncAudioUI(false, "Aguardando musica.mp3");
             } else {
               syncAudioUI(false, "Toque novamente");
             }
           });
+        }
       }
     }
 
     function seekAudio(e) {
       if (!audio.duration) return;
+      hasJumpedToStart = true;
       const rect = progressHit.getBoundingClientRect();
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
       const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
